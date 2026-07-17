@@ -80,7 +80,7 @@
 
         #status {
             position: absolute;
-            top: 80px;
+            top: calc(10% + 90px);
             left: 50%;
             transform: translateX(-50%);
             background: rgba(0,0,0,0.7);
@@ -117,9 +117,10 @@
             opacity: 1;
         }
 
+        /* 命名面板 - 移至工具栏正下方居中 */
         #naming-panel {
             position: absolute;
-            bottom: 30px;
+            top: calc(10% + 80px);
             left: 50%;
             transform: translateX(-50%);
             z-index: 200;
