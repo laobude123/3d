@@ -32,7 +32,7 @@
 
         #toolbar {
             position: absolute;
-            top: 20px;
+            top: 10%; /* 从20px改为10% */
             left: 50%;
             transform: translateX(-50%);
             z-index: 100;
@@ -585,7 +585,7 @@
         });
     }
 
-    // ----- 围栏管理（关键修复：使用 triangulateShape 直接构建 BufferGeometry）-----
+    // ----- 围栏管理（修复版）-----
     const fences = [];
     let drawMode = false;
     let currentVertices = [];
@@ -643,7 +643,6 @@
     // ===== 修复核心：buildPolygon 直接使用 triangulateShape 构建 BufferGeometry，不旋转 =====
     function buildPolygon(verts) {
         if (verts.length < 3) return null;
-        // 转为 Vector2
         const points = verts.map(v => new THREE.Vector2(v.x, v.z));
         let triIndices;
         try {
@@ -652,12 +651,10 @@
             console.error('三角剖分失败:', e);
             return null;
         }
-        // 展平索引
         const flatIndices = [];
         for (const tri of triIndices) {
             flatIndices.push(tri[0], tri[1], tri[2]);
         }
-        // 构建几何体，顶点位置直接使用 (x, 0, z)
         const geometry = new THREE.BufferGeometry();
         const positions = [];
         for (const v of verts) {
@@ -683,11 +680,10 @@
                 depthWrite: false,
             });
             const mesh = new THREE.Mesh(geom, material);
-            mesh.position.y = 0.02; // 仅抬高一点，水平位置不变
+            mesh.position.y = 0.02;
             mesh.renderOrder = 1;
             scene.add(mesh);
 
-            // 边框（使用相同顶点）
             const borderPoints = vertices.map(v => new THREE.Vector3(v.x, 0.03, v.z));
             borderPoints.push(borderPoints[0]);
             const borderGeo = new THREE.BufferGeometry().setFromPoints(borderPoints);
@@ -696,7 +692,6 @@
             border.renderOrder = 2;
             scene.add(border);
 
-            // 名称标签
             const center = new THREE.Vector3();
             for (const v of vertices) center.add(v);
             center.divideScalar(vertices.length);
@@ -953,7 +948,7 @@
         labelRenderer.setSize(w, h);
     });
 
-    console.log('✅ 电子围栏已修复（精确吻合）');
+    console.log('✅ 电子围栏已修复，工具栏位置调整为10%');
 </script>
 </body>
 </html>
