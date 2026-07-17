@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Tiles - 纯场景</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        overflow: hidden;
+        background: #1f1f1f;
+      }
+      #container {
+        width: 100vw;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container"></div>
+
+    <!-- 使用 CDN 引入 Three.js 及 3D Tiles 渲染器（推荐） -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.179.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.179.0/examples/jsm/",
+          "3d-tiles-renderer": "https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.4.27/src/three/renderer/index.js",
+          "3d-tiles-renderer/core": "https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.4.27/src/core/renderer/index.js"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { TilesRenderer } from "3d-tiles-renderer";
+
+      const container = document.getElementById("container");
+
+      // ---------- 场景 ----------
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1f1f1f);
+
+      // ---------- 相机 ----------
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        10000
+      );
+      camera.position.set(0, 30, 30);
+
+      // ---------- 渲染器 ----------
+      const renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        logarithmicDepthBuffer: true,
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container.appendChild(renderer.domElement);
+
+      // ---------- 控制器 ----------
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      // ---------- 灯光 ----------
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+      dirLight.position.set(100, 200, 100);
+      scene.add(dirLight);
+
+      // 辅助（可选，可注释掉）
+      // scene.add(new THREE.AxesHelper(1000));
+
+      // ---------- Tiles 渲染器 ----------
+      let tilesRenderer = null;
+      let tilesGroup = null;
+
+      // 默认加载的模型地址（可根据需要更换）
+      const defaultUrl =
+        "https://z2586300277.github.io/3d-file-server/3dtiles/test/tileset.json";
+
+      async function loadTileset(url) {
+        if (!url) return;
+
+        // 清除旧数据
+        if (tilesGroup) {
+          scene.remove(tilesGroup);
+          tilesGroup = null;
+        }
+        if (tilesRenderer) {
+          tilesRenderer.dispose();
+          tilesRenderer = null;
+        }
+
+        try {
+          tilesRenderer = new TilesRenderer(url);
+          tilesRenderer.setCamera(camera);
+          tilesRenderer.setResolutionFromRenderer(camera, renderer);
+
+          tilesGroup = new THREE.Group();
+          tilesGroup.add(tilesRenderer.group);
+          scene.add(tilesGroup);
+
+          // 加载完成后自动居中模型
+          const box3 = new THREE.Box3();
+          tilesRenderer.addEventListener("load-tile-set", () => {
+            if (tilesRenderer.getBoundingBox(box3)) {
+              box3.getCenter(tilesRenderer.group.position);
+              tilesRenderer.group.position.multiplyScalar(-1);
+            }
+
+            // 将材质转换为标准材质以接受光照（可选）
+            tilesRenderer.traverse((tile) => {
+              if (tile.scene) {
+                tile.scene.traverse((child) => {
+                  if (child.isMesh && child.material) {
+                    const materials = Array.isArray(child.material)
+                      ? child.material
+                      : [child.material];
+                    materials.forEach((mat) => {
+                      if (mat.isMeshBasicMaterial) {
+                        const newMat = new THREE.MeshStandardMaterial({
+                          color: mat.color,
+                          map: mat.map,
+                          roughness: 0.5,
+                          metalness: 0.1,
+                        });
+                        // 替换材质
+                        if (Array.isArray(child.material)) {
+                          child.material = child.material.map((m) =>
+                            m === mat ? newMat : m
+                          );
+                        } else {
+                          child.material = newMat;
+                        }
+                      }
+                    });
+                  }
+                });
+              }
+            });
+          });
+
+          await tilesRenderer.update();
+        } catch (error) {
+          console.error("加载失败:", error);
+        }
+      }
+
+      // 自动加载默认模型
+      loadTileset(defaultUrl);
+
+      // ---------- 动画循环 ----------
+      function animate() {
+        requestAnimationFrame(animate);
+
+        if (tilesRenderer) {
+          tilesRenderer.update();
+        }
+
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      // ---------- 窗口自适应 ----------
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        if (tilesRenderer) {
+          tilesRenderer.setResolutionFromRenderer(camera, renderer);
+        }
+      });
+    </script>
+
+    <!-- 截图支持（如果不需要可以删除） -->
+    <script>
+      window.addEventListener("message", (e) => {
+        if (e.data?.type === "take-screenshot") {
+          try {
+            const canvas = document.querySelector("canvas");
+            if (canvas) {
+              const temp = document.createElement("canvas");
+              const scale = Math.min(600 / canvas.width, 600 / canvas.height);
+              temp.width = canvas.width * scale;
+              temp.height = canvas.height * scale;
+              temp
+                .getContext("2d")
+                .drawImage(canvas, 0, 0, temp.width, temp.height);
+              window.parent.postMessage(
+                {
+                  type: "screenshot-data",
+                  dataUrl: temp.toDataURL("image/jpeg", e.data.quality || 0.8),
+                },
+                "*"
+              );
+            }
+          } catch (err) {
+            window.parent.postMessage(
+              { type: "screenshot-error", error: err.message },
+              "*"
+            );
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
