@@ -3,24 +3,24 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>水泥地面 - 头顶头像（调整高度与大小）</title>
+    <title>水泥地面 - 头顶头像（66px）</title>
     <style>
         * { margin: 0; padding: 0; }
         body { overflow: hidden; background: #87CEEB; font-family: Arial, sans-serif; }
         canvas { display: block; }
 
-        /* 头像大小：原来50px，缩小三分之一 -> 约33px */
+        /* 头像大小：66px（原来33px翻倍） */
         .avatar-label {
             pointer-events: none;
             user-select: none;
             display: flex;
             justify-content: center;
             align-items: center;
-            width: 33px;
-            height: 33px;
+            width: 66px;
+            height: 66px;
             border-radius: 50%;
             border: 2px solid rgba(255,255,255,0.8);
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             background-color: #fff;
             overflow: hidden;
         }
@@ -278,7 +278,7 @@
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // ----- 11. 创建模型 + 头像标签（高度为原来的1.5倍，头像大小由CSS控制） -----
+    // ----- 11. 创建模型 + 头像标签（高度 = 1.5倍，头像大小由CSS控制为66px） -----
     function createCar(color = 0x4488ff) {
         const group = new THREE.Group();
         const scale = 3.0;
@@ -321,7 +321,7 @@
         light2.position.set(0.6 * scale, 0.3 * scale, 0.25 * scale);
         group.add(light2);
 
-        // ---- 头像标签 (垂直偏移: 原来 (1.2*scale+0.8) * 3，现在减半 -> 乘以1.5) ----
+        // ---- 头像标签 (垂直偏移 = (1.2*scale+0.8) * 1.5) ----
         const avatarCanvas = createAvatarIcon(color, 'car');
         const div = document.createElement('div');
         div.className = 'avatar-label';
@@ -378,7 +378,7 @@
             group.add(arm);
         });
 
-        // ---- 头像标签 (垂直偏移: 原来 (1.2*scale+0.8) * 3，现在减半 -> 乘以1.5) ----
+        // ---- 头像标签 (垂直偏移 = (1.2*scale+0.8) * 1.5) ----
         const avatarCanvas = createAvatarIcon(color, 'person');
         const div = document.createElement('div');
         div.className = 'avatar-label';
@@ -492,7 +492,7 @@
         labelRenderer.setSize(w, h);
     });
 
-    console.log('✅ 头像高度调整为原来的1.5倍，大小缩至约33px');
+    console.log('✅ 头像大小已翻倍为66px，高度保持1.5倍');
 </script>
 </body>
 </html>
