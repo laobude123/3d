@@ -5,19 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>3D Tiles - 真实天空</title>
     <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      body {
-        overflow: hidden;
-        background: #1f1f1f;
-      }
-      #container {
-        width: 100vw;
-        height: 100vh;
-      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { overflow: hidden; background: #1f1f1f; }
+      #container { width: 100vw; height: 100vh; }
     </style>
   </head>
   <body>
@@ -38,13 +28,14 @@
       import * as THREE from "three";
       import { OrbitControls } from "three/addons/controls/OrbitControls.js";
       import { TilesRenderer } from "3d-tiles-renderer";
-      // 导入 Sky 着色器
       import { Sky } from "three/addons/objects/Sky.js";
 
       const container = document.getElementById("container");
 
       // ---------- 场景 ----------
       const scene = new THREE.Scene();
+      // 清空背景颜色，让 Sky 完全控制背景
+      scene.background = null;
 
       // ---------- 相机 ----------
       const camera = new THREE.PerspectiveCamera(
@@ -74,43 +65,44 @@
       controls.maxDistance = 500;
 
       // ============================================================
-      // 1. 真实天空（使用 Three.js Sky 着色器）
+      // 1. 真实天空（修复：设置 BackSide 让内部可见）
       // ============================================================
       const sky = new Sky();
       sky.scale.setScalar(10000);
       scene.add(sky);
 
-      // 太阳参数
+      // 关键修复：让天空球从内部可见
+      sky.material.side = THREE.BackSide;
+
       const skyUniforms = sky.material.uniforms;
-      skyUniforms['turbidity'].value = 2;      // 浑浊度（越小天空越蓝）
-      skyUniforms['rayleigh'].value = 1;        // 瑞利散射
+      skyUniforms['turbidity'].value = 2;
+      skyUniforms['rayleigh'].value = 1;
       skyUniforms['mieCoefficient'].value = 0.005;
       skyUniforms['mieDirectionalGradient'].value = 0.8;
 
-      // 设置太阳位置（方位角 + 仰角）
+      // 太阳位置（接近正午）
       const sun = new THREE.Vector3();
-      const phi = THREE.MathUtils.degToRad(88);   // 太阳高度角（88° 接近正午）
-      const theta = THREE.MathUtils.degToRad(180); // 太阳方向（南方）
+      const phi = THREE.MathUtils.degToRad(88);
+      const theta = THREE.MathUtils.degToRad(180);
       sun.setFromSphericalCoords(1, phi, theta);
       skyUniforms['sunPosition'].value.copy(sun);
 
-      // 环境光跟随太阳
+      // 环境光
       const ambientLight = new THREE.AmbientLight(0x404060, 0.4);
       scene.add(ambientLight);
 
-      // 主光源（太阳光）
+      // 太阳光
       const sunLight = new THREE.DirectionalLight(0xffeedd, 1.8);
       sunLight.position.copy(sun.clone().multiplyScalar(300));
-      sunLight.castShadow = false;
       scene.add(sunLight);
 
-      // 补充环境光
+      // 补光
       const fillLight = new THREE.DirectionalLight(0x4488ff, 0.3);
       fillLight.position.set(-100, 50, -100);
       scene.add(fillLight);
 
       // ============================================================
-      // 2. 立体云朵（使用 Canvas 生成的云纹理 + Sprite）
+      // 2. 立体云朵（使用 Sprite）
       // ============================================================
       function createCloudTexture() {
         const canvas = document.createElement('canvas');
@@ -118,18 +110,7 @@
         canvas.height = 128;
         const ctx = canvas.getContext('2d');
 
-        // 绘制一个半透明的云团
-        const gradient = ctx.createRadialGradient(128, 64, 0, 128, 64, 80);
-        gradient.addColorStop(0, 'rgba(255,255,255,0.95)');
-        gradient.addColorStop(0.3, 'rgba(255,255,255,0.8)');
-        gradient.addColorStop(0.6, 'rgba(255,255,255,0.5)');
-        gradient.addColorStop(0.8, 'rgba(255,255,255,0.2)');
-        gradient.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 256, 128);
-
-        // 叠加多个椭圆形成云朵形状
-        ctx.globalCompositeOperation = 'source-over';
+        // 绘制半透明云团
         const centers = [
           [80, 50, 60, 35],
           [130, 40, 70, 40],
@@ -141,8 +122,10 @@
         ];
         centers.forEach(([cx, cy, rx, ry]) => {
           const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx);
-          g.addColorStop(0, 'rgba(255,255,255,0.9)');
-          g.addColorStop(0.5, 'rgba(255,255,255,0.6)');
+          g.addColorStop(0, 'rgba(255,255,255,0.95)');
+          g.addColorStop(0.3, 'rgba(255,255,255,0.8)');
+          g.addColorStop(0.6, 'rgba(255,255,255,0.5)');
+          g.addColorStop(0.8, 'rgba(255,255,255,0.2)');
           g.addColorStop(1, 'rgba(255,255,255,0)');
           ctx.fillStyle = g;
           ctx.beginPath();
@@ -172,7 +155,7 @@
         return sprite;
       }
 
-      // 随机分布云朵在场景上方
+      // 随机生成云朵
       const cloudPositions = [];
       for (let i = 0; i < 45; i++) {
         const radius = 80 + Math.random() * 150;
@@ -194,12 +177,7 @@
       }
 
       // ============================================================
-      // 3. 远处地面雾效（让地平线更自然）
-      // ============================================================
-      scene.fog = new THREE.Fog(0x87CEEB, 200, 500);
-
-      // ============================================================
-      // 4. Tiles 渲染器
+      // 3. Tiles 渲染器
       // ============================================================
       let tilesRenderer = null;
       let tilesGroup = null;
@@ -274,18 +252,17 @@
       loadTileset(defaultUrl);
 
       // ============================================================
-      // 5. 动画循环
+      // 4. 动画循环
       // ============================================================
       function animate() {
         requestAnimationFrame(animate);
 
-        // 云朵缓慢飘动
+        // 云朵飘动
         cloudPositions.forEach((cp) => {
           cp.angle += cp.speed * 0.5;
           const r = cp.radius + Math.sin(Date.now() * 0.0001 + cp.phase) * 5;
           cp.mesh.position.x = Math.cos(cp.angle) * r;
           cp.mesh.position.z = Math.sin(cp.angle) * r;
-          // 上下浮动
           cp.mesh.position.y = cp.y + Math.sin(Date.now() * 0.0003 + cp.phase) * 2;
         });
 
