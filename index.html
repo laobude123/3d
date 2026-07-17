@@ -1,323 +1,498 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>3D Tiles - 真实天空</title>
+    <title>水泥地面 - 头顶头像（调整高度与大小）</title>
     <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { overflow: hidden; background: #1f1f1f; }
-      #container { width: 100vw; height: 100vh; }
-    </style>
-  </head>
-  <body>
-    <div id="container"></div>
+        * { margin: 0; padding: 0; }
+        body { overflow: hidden; background: #87CEEB; font-family: Arial, sans-serif; }
+        canvas { display: block; }
 
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://unpkg.com/three@0.179.0/build/three.module.js",
-          "three/addons/": "https://unpkg.com/three@0.179.0/examples/jsm/",
-          "3d-tiles-renderer": "https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.4.27/src/three/renderer/index.js",
-          "3d-tiles-renderer/core": "https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.4.27/src/core/renderer/index.js"
+        /* 头像大小：原来50px，缩小三分之一 -> 约33px */
+        .avatar-label {
+            pointer-events: none;
+            user-select: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 33px;
+            height: 33px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.8);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            background-color: #fff;
+            overflow: hidden;
         }
-      }
-    </script>
+        .avatar-label canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
 
-    <script type="module">
-      import * as THREE from "three";
-      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-      import { TilesRenderer } from "3d-tiles-renderer";
-      import { Sky } from "three/addons/objects/Sky.js";
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.179.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.179.0/examples/jsm/"
+        }
+    }
+</script>
 
-      const container = document.getElementById("container");
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
-      // ---------- 场景 ----------
-      const scene = new THREE.Scene();
-      scene.background = null; // 让 Sky 完全控制背景
-
-      // ---------- 相机 ----------
-      const camera = new THREE.PerspectiveCamera(
-        75,
-        window.innerWidth / window.innerHeight,
-        0.1,
-        10000
-      );
-      camera.position.set(0, 30, 30);
-
-      // ---------- 渲染器 ----------
-      const renderer = new THREE.WebGLRenderer({
-        antialias: true,
-        alpha: false,
-        logarithmicDepthBuffer: false, // 关闭以避免冲突
-      });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.0;
-      // 关键修复：清屏颜色设为完全透明，这样 Sky 才能显示出来
-      renderer.setClearColor(0x000000, 0);
-      container.appendChild(renderer.domElement);
-
-      // ---------- 控制器 ----------
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.minDistance = 1;
-      controls.maxDistance = 500;
-
-      // ============================================================
-      // 1. 真实天空（使用 Three.js Sky 着色器）
-      // ============================================================
-      const sky = new Sky();
-      sky.scale.setScalar(10000);
-      // 使天空球从内部可见
-      sky.material.side = THREE.BackSide;
-      // 确保天空先渲染
-      sky.renderOrder = -1;
-      scene.add(sky);
-
-      const skyUniforms = sky.material.uniforms;
-      skyUniforms['turbidity'].value = 2;
-      skyUniforms['rayleigh'].value = 1;
-      skyUniforms['mieCoefficient'].value = 0.005;
-      skyUniforms['mieDirectionalGradient'].value = 0.8;
-
-      // 太阳位置（正午）
-      const sun = new THREE.Vector3();
-      const phi = THREE.MathUtils.degToRad(88);
-      const theta = THREE.MathUtils.degToRad(180);
-      sun.setFromSphericalCoords(1, phi, theta);
-      skyUniforms['sunPosition'].value.copy(sun);
-
-      // 环境光
-      const ambientLight = new THREE.AmbientLight(0x404060, 0.4);
-      scene.add(ambientLight);
-
-      // 太阳光
-      const sunLight = new THREE.DirectionalLight(0xffeedd, 1.8);
-      sunLight.position.copy(sun.clone().multiplyScalar(300));
-      scene.add(sunLight);
-
-      // 补光
-      const fillLight = new THREE.DirectionalLight(0x4488ff, 0.3);
-      fillLight.position.set(-100, 50, -100);
-      scene.add(fillLight);
-
-      // ============================================================
-      // 2. 立体云朵（使用 Sprite，轻量且稳定）
-      // ============================================================
-      function createCloudTexture() {
+    // ----- 1. 生成天空纹理 -----
+    function createSkyTexture() {
         const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 128;
+        canvas.width = 1024;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        grad.addColorStop(0, '#1a5a9c');
+        grad.addColorStop(0.25, '#4a9ed6');
+        grad.addColorStop(0.5, '#7ec8e3');
+        grad.addColorStop(0.75, '#b0dce8');
+        grad.addColorStop(1, '#e0f0f5');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = 0.08;
+        for (let i = 0; i < 20; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height * 0.6;
+            const w = 80 + Math.random() * 200;
+            const h = 20 + Math.random() * 40;
+            const g = ctx.createRadialGradient(x, y, 0, x, y, w);
+            g.addColorStop(0, 'rgba(255,255,255,1)');
+            g.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+            g.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.magFilter = THREE.LinearFilter;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        return texture;
+    }
+
+    // ----- 2. 生成水泥地面纹理 -----
+    function createCementTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#b8b8b8';
+        ctx.fillRect(0, 0, 512, 512);
+        for (let i = 0; i < 8000; i++) {
+            const x = Math.random() * 512;
+            const y = Math.random() * 512;
+            const size = 1 + Math.random() * 3;
+            const brightness = 120 + Math.random() * 80;
+            ctx.fillStyle = `rgb(${brightness}, ${brightness}, ${brightness})`;
+            ctx.fillRect(x, y, size, size);
+        }
+        for (let i = 0; i < 400; i++) {
+            const x = Math.random() * 512;
+            const y = Math.random() * 512;
+            const size = 1 + Math.random() * 2;
+            const dark = 60 + Math.random() * 60;
+            ctx.fillStyle = `rgb(${dark}, ${dark}, ${dark})`;
+            ctx.fillRect(x, y, size, size);
+        }
+        for (let i = 0; i < 200; i++) {
+            const x = Math.random() * 512;
+            const y = Math.random() * 512;
+            const size = 1 + Math.random() * 2;
+            const light = 200 + Math.random() * 55;
+            ctx.fillStyle = `rgb(${light}, ${light}, ${light})`;
+            ctx.fillRect(x, y, size, size);
+        }
+        ctx.strokeStyle = 'rgba(100,100,100,0.1)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 30; i++) {
+            const startX = Math.random() * 512;
+            const startY = Math.random() * 512;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            for (let j = 0; j < 5; j++) {
+                ctx.lineTo(startX + (Math.random() - 0.5) * 40, startY + (Math.random() - 0.5) * 40);
+            }
+            ctx.stroke();
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(8, 8);
+        texture.anisotropy = 4;
+        return texture;
+    }
+
+    // ----- 3. 生成头像图标（Canvas绘制圆形图标） -----
+    function createAvatarIcon(color, type) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 80;
+        canvas.height = 80;
         const ctx = canvas.getContext('2d');
 
-        // 绘制多个半透明圆斑叠加形成云朵
-        const centers = [
-          [80, 50, 60, 35],
-          [130, 40, 70, 40],
-          [180, 55, 55, 30],
-          [100, 70, 50, 25],
-          [150, 70, 45, 25],
-          [60, 65, 40, 20],
-          [200, 70, 35, 18]
+        const bgColor = new THREE.Color(color);
+        bgColor.offsetHSL(0, 0.1, 0.2);
+        ctx.beginPath();
+        ctx.arc(40, 40, 38, 0, Math.PI * 2);
+        ctx.fillStyle = bgColor.getStyle();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = 'rgba(0,0,0,0.2)';
+        ctx.shadowBlur = 4;
+
+        if (type === 'car') {
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowBlur = 4;
+            ctx.fillRect(18, 28, 44, 24);
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.fillRect(28, 22, 24, 10);
+            ctx.fillStyle = '#333';
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.arc(22, 44, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(58, 44, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(22, 58, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(58, 58, 6, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.arc(40, 25, 12, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.fillRect(34, 37, 12, 20);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(34, 42);
+            ctx.lineTo(22, 52);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(46, 42);
+            ctx.lineTo(58, 52);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(37, 57);
+            ctx.lineTo(32, 70);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(43, 57);
+            ctx.lineTo(48, 70);
+            ctx.stroke();
+        }
+        return canvas;
+    }
+
+    // ----- 4. 场景设置 -----
+    const scene = new THREE.Scene();
+    scene.background = createSkyTexture();
+    scene.fog = new THREE.Fog(0xe0f0f5, 180, 300);
+
+    // ----- 5. 相机 -----
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+    camera.position.set(40, 35, 50);
+
+    // ----- 6. WebGL渲染器 -----
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    // ----- 7. CSS2D渲染器（用于固定大小的头像） -----
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    labelRenderer.domElement.style.position = 'absolute';
+    labelRenderer.domElement.style.top = '0px';
+    labelRenderer.domElement.style.left = '0px';
+    labelRenderer.domElement.style.pointerEvents = 'none';
+    document.body.appendChild(labelRenderer.domElement);
+
+    // ----- 8. 控制器 -----
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 1, 0);
+    controls.maxDistance = 200;
+    controls.update();
+
+    // ----- 9. 灯光 -----
+    const ambient = new THREE.AmbientLight(0x8899bb, 0.6);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffeedd, 2.0);
+    dirLight.position.set(30, 60, 30);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    const d = 80;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 120;
+    scene.add(dirLight);
+    const fillLight = new THREE.DirectionalLight(0x88aaff, 0.5);
+    fillLight.position.set(-30, 15, -30);
+    scene.add(fillLight);
+    const backLight = new THREE.DirectionalLight(0xffccaa, 0.3);
+    backLight.position.set(-20, 10, 40);
+    scene.add(backLight);
+
+    // ----- 10. 水泥地面 -----
+    const cementTexture = createCementTexture();
+    const groundMat = new THREE.MeshStandardMaterial({
+        map: cementTexture,
+        roughness: 0.9,
+        metalness: 0.0,
+        color: 0xcccccc,
+    });
+    const groundSize = 300;
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize), groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.01;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // ----- 11. 创建模型 + 头像标签（高度为原来的1.5倍，头像大小由CSS控制） -----
+    function createCar(color = 0x4488ff) {
+        const group = new THREE.Group();
+        const scale = 3.0;
+
+        const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.2 });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.2 * scale, 0.4 * scale, 0.8 * scale), bodyMat);
+        body.position.y = 0.3 * scale;
+        body.castShadow = true;
+        body.receiveShadow = true;
+        group.add(body);
+
+        const roofMat = new THREE.MeshStandardMaterial({ color: 0xccccdd, roughness: 0.6 });
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(0.6 * scale, 0.3 * scale, 0.5 * scale), roofMat);
+        roof.position.set(0, 0.6 * scale, 0);
+        roof.castShadow = true;
+        roof.receiveShadow = true;
+        group.add(roof);
+
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+        const wheelPos = [
+            [-0.5 * scale, 0.1 * scale, -0.5 * scale],
+            [0.5 * scale, 0.1 * scale, -0.5 * scale],
+            [-0.5 * scale, 0.1 * scale, 0.5 * scale],
+            [0.5 * scale, 0.1 * scale, 0.5 * scale]
         ];
-        centers.forEach(([cx, cy, rx, ry]) => {
-          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx);
-          g.addColorStop(0, 'rgba(255,255,255,0.95)');
-          g.addColorStop(0.3, 'rgba(255,255,255,0.8)');
-          g.addColorStop(0.6, 'rgba(255,255,255,0.5)');
-          g.addColorStop(0.8, 'rgba(255,255,255,0.2)');
-          g.addColorStop(1, 'rgba(255,255,255,0)');
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-          ctx.fill();
+        wheelPos.forEach(pos => {
+            const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * scale, 0.15 * scale, 0.08 * scale, 8), wheelMat);
+            wheel.rotation.z = Math.PI / 2;
+            wheel.position.set(pos[0], 0.1 * scale, pos[1]);
+            wheel.castShadow = true;
+            wheel.receiveShadow = true;
+            group.add(wheel);
         });
 
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
-        return texture;
-      }
+        const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffaa, emissive: 0xffffaa, emissiveIntensity: 0.3 });
+        const light1 = new THREE.Mesh(new THREE.SphereGeometry(0.05 * scale, 6, 6), lightMat);
+        light1.position.set(0.6 * scale, 0.3 * scale, -0.25 * scale);
+        group.add(light1);
+        const light2 = new THREE.Mesh(new THREE.SphereGeometry(0.05 * scale, 6, 6), lightMat);
+        light2.position.set(0.6 * scale, 0.3 * scale, 0.25 * scale);
+        group.add(light2);
 
-      const cloudTexture = createCloudTexture();
+        // ---- 头像标签 (垂直偏移: 原来 (1.2*scale+0.8) * 3，现在减半 -> 乘以1.5) ----
+        const avatarCanvas = createAvatarIcon(color, 'car');
+        const div = document.createElement('div');
+        div.className = 'avatar-label';
+        div.appendChild(avatarCanvas);
+        const label = new CSS2DObject(div);
+        label.position.set(0, (1.2 * scale + 0.8) * 1.5, 0);
+        group.add(label);
 
-      function createCloud(position, scale = 1) {
-        const material = new THREE.SpriteMaterial({
-          map: cloudTexture,
-          transparent: true,
-          opacity: 0.7,
-          depthWrite: false,
-          blending: THREE.NormalBlending,
+        return group;
+    }
+
+    function createPerson(color = 0xffaa44) {
+        const group = new THREE.Group();
+        const scale = 3.0;
+
+        const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.25 * scale, 0.25 * scale, 0.6 * scale, 6), bodyMat);
+        body.position.y = 0.4 * scale;
+        body.castShadow = true;
+        body.receiveShadow = true;
+        group.add(body);
+
+        const headMat = new THREE.MeshStandardMaterial({ color: 0xffddbb, roughness: 0.5 });
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.18 * scale, 8, 8), headMat);
+        head.position.set(0, 0.8 * scale, 0);
+        head.castShadow = true;
+        head.receiveShadow = true;
+        group.add(head);
+
+        const legMat = new THREE.MeshStandardMaterial({ color: 0x445566, roughness: 0.7 });
+        const legPos = [
+            [-0.1 * scale, 0.1 * scale, 0],
+            [0.1 * scale, 0.1 * scale, 0]
+        ];
+        legPos.forEach(pos => {
+            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06 * scale, 0.06 * scale, 0.2 * scale, 6), legMat);
+            leg.position.set(pos[0], 0.1 * scale, pos[1]);
+            leg.castShadow = true;
+            leg.receiveShadow = true;
+            group.add(leg);
         });
-        const sprite = new THREE.Sprite(material);
-        sprite.position.copy(position);
-        sprite.scale.set(60 * scale, 30 * scale, 1);
-        sprite.renderOrder = -1;
-        return sprite;
-      }
 
-      // 随机生成云朵
-      const cloudPositions = [];
-      for (let i = 0; i < 45; i++) {
-        const radius = 80 + Math.random() * 150;
+        const armMat = new THREE.MeshStandardMaterial({ color: 0xffddbb, roughness: 0.5 });
+        const armPos = [
+            [-0.3 * scale, 0.5 * scale, 0],
+            [0.3 * scale, 0.5 * scale, 0]
+        ];
+        armPos.forEach(pos => {
+            const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04 * scale, 0.04 * scale, 0.3 * scale, 6), armMat);
+            arm.position.set(pos[0], 0.5 * scale, pos[1]);
+            arm.rotation.z = pos[0] > 0 ? -0.3 : 0.3;
+            arm.castShadow = true;
+            arm.receiveShadow = true;
+            group.add(arm);
+        });
+
+        // ---- 头像标签 (垂直偏移: 原来 (1.2*scale+0.8) * 3，现在减半 -> 乘以1.5) ----
+        const avatarCanvas = createAvatarIcon(color, 'person');
+        const div = document.createElement('div');
+        div.className = 'avatar-label';
+        div.appendChild(avatarCanvas);
+        const label = new CSS2DObject(div);
+        label.position.set(0, (1.2 * scale + 0.8) * 1.5, 0);
+        group.add(label);
+
+        return group;
+    }
+
+    // ----- 12. 生成大量随机移动实体 -----
+    const entities = [];
+    const boundary = 140;
+    const speedBase = 0.035;
+
+    const carColors = [
+        0x4488ff, 0xff6644, 0x44dd88, 0xffaa33, 0xcc66ff, 0xff44aa, 0x66ccff,
+        0xffaa44, 0x88ddff, 0xaa88ff, 0xff8866, 0x44ffaa, 0x66aaff, 0xff66cc, 0x88ff66
+    ];
+    for (let i = 0; i < 15; i++) {
+        const car = createCar(carColors[i % carColors.length]);
+        const x = (Math.random() - 0.5) * 240;
+        const z = (Math.random() - 0.5) * 240;
+        car.position.set(x, 0, z);
         const angle = Math.random() * Math.PI * 2;
-        const x = Math.cos(angle) * radius;
-        const z = Math.sin(angle) * radius;
-        const y = 25 + Math.random() * 35;
-        const scale = 0.6 + Math.random() * 1.2;
-        const cloud = createCloud(new THREE.Vector3(x, y, z), scale);
-        scene.add(cloud);
-        cloudPositions.push({
-          mesh: cloud,
-          angle: angle,
-          radius: radius,
-          y: y,
-          speed: 0.0003 + Math.random() * 0.0005,
-          phase: Math.random() * Math.PI * 2
+        car.rotation.y = angle;
+        scene.add(car);
+        entities.push({
+            mesh: car,
+            angle: angle,
+            speed: speedBase * (0.7 + Math.random() * 0.6),
+            turnTimer: 0,
+            turnInterval: 100 + Math.random() * 200,
+            type: 'car'
         });
-      }
+    }
 
-      // ============================================================
-      // 3. Tiles 渲染器
-      // ============================================================
-      let tilesRenderer = null;
-      let tilesGroup = null;
+    const personColors = [
+        0xff8844, 0x44ddff, 0xff66aa, 0x88ff44, 0xffaa88, 0xaa88ff, 0x66ff99,
+        0xff9966, 0x66ddff, 0xff77bb, 0x99ff66, 0xcc88ff, 0x88ffcc, 0xffaa66, 0x66ccff,
+        0xff66bb, 0x88ff88, 0xaa88dd, 0xffbb88, 0x44ffdd
+    ];
+    for (let i = 0; i < 25; i++) {
+        const person = createPerson(personColors[i % personColors.length]);
+        const x = (Math.random() - 0.5) * 240;
+        const z = (Math.random() - 0.5) * 240;
+        person.position.set(x, 0, z);
+        const angle = Math.random() * Math.PI * 2;
+        person.rotation.y = angle;
+        scene.add(person);
+        entities.push({
+            mesh: person,
+            angle: angle,
+            speed: speedBase * (0.5 + Math.random() * 0.7),
+            turnTimer: 0,
+            turnInterval: 80 + Math.random() * 150,
+            type: 'person'
+        });
+    }
 
-      const defaultUrl =
-        "https://z2586300277.github.io/3d-file-server/3dtiles/test/tileset.json";
-
-      async function loadTileset(url) {
-        if (!url) return;
-
-        if (tilesGroup) {
-          scene.remove(tilesGroup);
-          tilesGroup = null;
-        }
-        if (tilesRenderer) {
-          tilesRenderer.dispose();
-          tilesRenderer = null;
-        }
-
-        try {
-          tilesRenderer = new TilesRenderer(url);
-          tilesRenderer.setCamera(camera);
-          tilesRenderer.setResolutionFromRenderer(camera, renderer);
-
-          tilesGroup = new THREE.Group();
-          tilesGroup.add(tilesRenderer.group);
-          scene.add(tilesGroup);
-
-          const box3 = new THREE.Box3();
-          tilesRenderer.addEventListener("load-tile-set", () => {
-            if (tilesRenderer.getBoundingBox(box3)) {
-              box3.getCenter(tilesRenderer.group.position);
-              tilesRenderer.group.position.multiplyScalar(-1);
+    // ----- 13. 动画更新 -----
+    function updateEntities() {
+        const time = Date.now();
+        entities.forEach(ent => {
+            ent.turnTimer++;
+            if (ent.turnTimer > ent.turnInterval) {
+                ent.turnTimer = 0;
+                ent.turnInterval = 100 + Math.random() * 200;
+                const delta = (Math.random() - 0.5) * 2.0;
+                ent.angle += delta;
             }
 
-            tilesRenderer.traverse((tile) => {
-              if (tile.scene) {
-                tile.scene.traverse((child) => {
-                  if (child.isMesh && child.material) {
-                    const materials = Array.isArray(child.material)
-                      ? child.material
-                      : [child.material];
-                    materials.forEach((mat) => {
-                      if (mat.isMeshBasicMaterial) {
-                        const newMat = new THREE.MeshStandardMaterial({
-                          color: mat.color,
-                          map: mat.map,
-                          roughness: 0.5,
-                          metalness: 0.1,
-                        });
-                        if (Array.isArray(child.material)) {
-                          child.material = child.material.map((m) =>
-                            m === mat ? newMat : m
-                          );
-                        } else {
-                          child.material = newMat;
-                        }
-                      }
-                    });
-                  }
-                });
-              }
-            });
-          });
+            const dx = Math.sin(ent.angle) * ent.speed;
+            const dz = Math.cos(ent.angle) * ent.speed;
+            let newX = ent.mesh.position.x + dx;
+            let newZ = ent.mesh.position.z + dz;
 
-          await tilesRenderer.update();
-        } catch (error) {
-          console.error("加载失败:", error);
-        }
-      }
+            if (newX > boundary) { newX = boundary; ent.angle = Math.PI - ent.angle + (Math.random() - 0.5) * 0.5; }
+            if (newX < -boundary) { newX = -boundary; ent.angle = Math.PI - ent.angle + (Math.random() - 0.5) * 0.5; }
+            if (newZ > boundary) { newZ = boundary; ent.angle = -ent.angle + (Math.random() - 0.5) * 0.5; }
+            if (newZ < -boundary) { newZ = -boundary; ent.angle = -ent.angle + (Math.random() - 0.5) * 0.5; }
 
-      loadTileset(defaultUrl);
+            ent.mesh.position.set(newX, 0, newZ);
+            ent.mesh.rotation.y = ent.angle;
 
-      // ============================================================
-      // 4. 动画循环
-      // ============================================================
-      function animate() {
-        requestAnimationFrame(animate);
-
-        // 云朵飘动
-        cloudPositions.forEach((cp) => {
-          cp.angle += cp.speed * 0.5;
-          const r = cp.radius + Math.sin(Date.now() * 0.0001 + cp.phase) * 5;
-          cp.mesh.position.x = Math.cos(cp.angle) * r;
-          cp.mesh.position.z = Math.sin(cp.angle) * r;
-          cp.mesh.position.y = cp.y + Math.sin(Date.now() * 0.0003 + cp.phase) * 2;
+            if (ent.type === 'person') {
+                const bob = Math.sin(time * 0.005 + ent.mesh.id) * 0.05;
+                ent.mesh.position.y = bob;
+            }
         });
+    }
 
-        if (tilesRenderer) {
-          tilesRenderer.update();
-        }
-
+    // ----- 14. 动画循环 -----
+    function animate() {
+        requestAnimationFrame(animate);
+        updateEntities();
         controls.update();
         renderer.render(scene, camera);
-      }
-      animate();
+        labelRenderer.render(scene, camera);
+    }
+    animate();
 
-      // ---------- 窗口自适应 ----------
-      window.addEventListener("resize", () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
+    // ----- 15. 窗口自适应 -----
+    window.addEventListener('resize', () => {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        camera.aspect = w / h;
         camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        if (tilesRenderer) {
-          tilesRenderer.setResolutionFromRenderer(camera, renderer);
-        }
-      });
-    </script>
+        renderer.setSize(w, h);
+        labelRenderer.setSize(w, h);
+    });
 
-    <!-- 截图支持 -->
-    <script>
-      window.addEventListener("message", (e) => {
-        if (e.data?.type === "take-screenshot") {
-          try {
-            const canvas = document.querySelector("canvas");
-            if (canvas) {
-              const temp = document.createElement("canvas");
-              const scale = Math.min(600 / canvas.width, 600 / canvas.height);
-              temp.width = canvas.width * scale;
-              temp.height = canvas.height * scale;
-              temp
-                .getContext("2d")
-                .drawImage(canvas, 0, 0, temp.width, temp.height);
-              window.parent.postMessage(
-                {
-                  type: "screenshot-data",
-                  dataUrl: temp.toDataURL("image/jpeg", e.data.quality || 0.8),
-                },
-                "*"
-              );
-            }
-          } catch (err) {
-            window.parent.postMessage(
-              { type: "screenshot-error", error: err.message },
-              "*"
-            );
-          }
-        }
-      });
-    </script>
-  </body>
+    console.log('✅ 头像高度调整为原来的1.5倍，大小缩至约33px');
+</script>
+</body>
 </html>
