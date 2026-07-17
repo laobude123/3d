@@ -34,8 +34,7 @@
 
       // ---------- 场景 ----------
       const scene = new THREE.Scene();
-      // 清空背景颜色，让 Sky 完全控制背景
-      scene.background = null;
+      scene.background = null; // 让 Sky 完全控制背景
 
       // ---------- 相机 ----------
       const camera = new THREE.PerspectiveCamera(
@@ -50,12 +49,14 @@
       const renderer = new THREE.WebGLRenderer({
         antialias: true,
         alpha: false,
-        logarithmicDepthBuffer: true,
+        logarithmicDepthBuffer: false, // 关闭以避免冲突
       });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.0;
+      // 关键修复：清屏颜色设为完全透明，这样 Sky 才能显示出来
+      renderer.setClearColor(0x000000, 0);
       container.appendChild(renderer.domElement);
 
       // ---------- 控制器 ----------
@@ -65,14 +66,15 @@
       controls.maxDistance = 500;
 
       // ============================================================
-      // 1. 真实天空（修复：设置 BackSide 让内部可见）
+      // 1. 真实天空（使用 Three.js Sky 着色器）
       // ============================================================
       const sky = new Sky();
       sky.scale.setScalar(10000);
-      scene.add(sky);
-
-      // 关键修复：让天空球从内部可见
+      // 使天空球从内部可见
       sky.material.side = THREE.BackSide;
+      // 确保天空先渲染
+      sky.renderOrder = -1;
+      scene.add(sky);
 
       const skyUniforms = sky.material.uniforms;
       skyUniforms['turbidity'].value = 2;
@@ -80,7 +82,7 @@
       skyUniforms['mieCoefficient'].value = 0.005;
       skyUniforms['mieDirectionalGradient'].value = 0.8;
 
-      // 太阳位置（接近正午）
+      // 太阳位置（正午）
       const sun = new THREE.Vector3();
       const phi = THREE.MathUtils.degToRad(88);
       const theta = THREE.MathUtils.degToRad(180);
@@ -102,7 +104,7 @@
       scene.add(fillLight);
 
       // ============================================================
-      // 2. 立体云朵（使用 Sprite）
+      // 2. 立体云朵（使用 Sprite，轻量且稳定）
       // ============================================================
       function createCloudTexture() {
         const canvas = document.createElement('canvas');
@@ -110,7 +112,7 @@
         canvas.height = 128;
         const ctx = canvas.getContext('2d');
 
-        // 绘制半透明云团
+        // 绘制多个半透明圆斑叠加形成云朵
         const centers = [
           [80, 50, 60, 35],
           [130, 40, 70, 40],
